@@ -6,8 +6,6 @@ __pycache__/
 var/
 .pytest_cache/
 *.egg-info/
-dsh-home/
-dsh-workspace/
 
 frontend/node_modules/
 frontend/dist/

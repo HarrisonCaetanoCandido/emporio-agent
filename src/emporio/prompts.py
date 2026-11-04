@@ -1,7 +1,4 @@
-"""Persona e regras de atendimento. Fonte única: o loop Python e o DeepSeek Harness usam este texto.
-
-Atenção: o harness trata `{{variavel}}` como template estrito — não use chaves duplas aqui.
-"""
+"""Persona e regras de atendimento. Fonte única usada pelo loop em Python (agent.py)."""
 
 SYSTEM_PROMPT = """\
 Você é a Bia, assistente virtual da Empório da Música, loja de instrumentos musicais em Campo Grande/MS ("Sua música começa aqui."). Você atende clientes por mensagem de texto, no estilo WhatsApp.

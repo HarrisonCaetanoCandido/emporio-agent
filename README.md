@@ -5,7 +5,7 @@ Protótipo do desafio técnico de AI Engineer (Artefact): um agente de mensagens
 
 - **Linguagem:** Python 3.10+.
 - **Modelo:** DeepSeek via **OpenRouter** (API OpenAI-compatível).
-- **Interfaces:** chat web (**Vite + React**, servido pela API Python), CLI em Python e, opcionalmente, a Web UI do DeepSeek Harness (`dsh`).
+- **Interfaces:** chat web (**Vite + React**, servido pela API Python) e CLI em Python.
 
 ## Como rodar
 
@@ -34,15 +34,6 @@ A API serve o build e expõe `POST /api/chat` e `GET /api/history`. Escuta só e
 python -m emporio.cli --trace   # --trace mostra as ferramentas chamadas; comandos: /novo /sessoes /trace /exportar /sair
 ```
 
-**Web UI com DeepSeek Harness** (requer Node 20+):
-
-```bash
-./scripts/run_ui.sh             # gera o overlay, sobe http://127.0.0.1:3080 (a URL com token é impressa no terminal)
-```
-
-Na primeira vez, na UI: **Choose workspace** → adicione a pasta `dsh-workspace/` (criada pelo script). O agente selecionado
-já é o preset "Bia — Empório da Música". A chave vem de `OPENROUTER_API_KEY`; nada é gravado em `~/.dsh` (o script usa `dsh-home/`).
-
 **Conversas de exemplo** (rodam cenários reais contra o modelo e gravam as transcrições em `examples/`):
 
 ```bash
@@ -63,7 +54,7 @@ cliente ─► LLM (DeepSeek/OpenRouter) ──tool calls──► 7 ferramentas
 A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, sem duplicar lógica:
 
 1. **Loop em Python** (`agent.py`): function calling nativo, até 6 passos por mensagem (um passo = uma ida ao modelo).
-2. **Servidor MCP stdio** (`mcp_server.py`): é como o DeepSeek Harness enxerga a loja.
+2. **Servidor MCP stdio** (`mcp_server.py`): as mesmas ferramentas expostas para qualquer cliente MCP (ex.: Claude Desktop).
 
 | Ferramenta | Para quê |
 |---|---|
@@ -93,10 +84,9 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 - **Modelo: DeepSeek via OpenRouter.** Custo baixo, bom suporte a tool calling e uma chave só para trocar de modelo (`OPENROUTER_MODEL`).
   O loop desliga o *reasoning* por padrão (`EMPORIO_REASONING=default` reativa) porque não reenvia `reasoning_details` entre chamadas
   de ferramenta. *O slug `deepseek/deepseek-v4.1-flash` vem da página do modelo no OpenRouter; não consegui chamar a API daqui, então confirme com `scripts/check_openrouter.py`.*
-- **Interface: chat web (React) + CLI + DeepSeek Harness opcional.** O `dsh` é um harness de agente de código; para atendimento, o overlay
-  (`scripts/setup_dsh.py`) cria um preset só com persona + MCP da loja, **sem shell, arquivos ou web**, e desliga os presets padrão.
+- **Interface: chat web (React) + CLI.**
 - **Histórico:** SQLite (stdlib), uma linha por mensagem no formato da API; retoma por `--session`, com janela das últimas 40 mensagens
-  (sem cortar no meio de um par tool_call/tool). No harness, o histórico é o das sessões dele.
+  (sem cortar no meio de um par tool_call/tool).
 - **Segurança/privacidade:** pedidos só abrem com nº + e-mail/telefone; falha de validação devolve sempre a mesma mensagem (não revela se o
   pedido existe) e há limite de 5 falhas/10 min; o prompt trata mensagens e resultados de ferramentas como dados (não comandos).
 
@@ -125,13 +115,6 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 
 ## Limitações conhecidas e próximos passos
 
-- **Não testei com um modelo real** (o ambiente de desenvolvimento não alcançava o OpenRouter). O chat React foi verificado no navegador
-  (Chrome headless) contra um servidor OpenAI-compatível falso, e a Web UI do harness não foi aberta no navegador. Validei: testes unitários, o
-  servidor MCP por stdio, e o harness real (perfil `headless`) contra um servidor OpenAI-compatível falso, confirmando persona, ferramentas
-  expostas e o ciclo tool_call → resultado. Já o preset da Web UI foi validado só até a composição do config e a subida do servidor.
-  `examples/` é gerado por `scripts/generate_examples.py` na primeira execução com chave.
-- O harness é *developer preview*: o formato do overlay pode quebrar entre versões (testado com `@deepseek-ai/dsh` 0.2.1-rc.5).
-  Sobraram no agente helpers de recursos MCP e `exit_plan_mode`, inofensivos mas desnecessários.
 - Sem avaliação automática de qualidade das respostas (próximo passo: conjunto de cenários com checagens de tool calls e de fatos).
 - Sem fechamento de venda/reserva, sem integração real com WhatsApp, `encaminhar_atendente` grava em arquivo (`var/encaminhamentos.jsonl`).
 - Busca de políticas com sinônimos manuais; busca de produtos lexical (sem tolerância a erros de digitação além de plural).
