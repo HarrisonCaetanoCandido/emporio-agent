@@ -78,8 +78,8 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 ## Decisões técnicas e justificativas
 
 - **Function calling (ReAct nativo) em vez de RAG puro ou text-to-SQL.** Os dados são pequenos e estruturados; consultas
-  parametrizadas são mais seguras e auditáveis que SQL gerado por LLM, e o modelo decide *quando* consultar dados vs. políticas
-  (requisito do desafio). Preço, estoque, prazo e conta saem de código, não do modelo.
+  parametrizadas são mais seguras e auditáveis que SQL gerado por LLM, e o modelo decide *quando* consultar dados vs. políticas.
+  Preço, estoque, prazo e conta saem de código, não do modelo.
 - **Busca nas políticas: por palavra-chave, não por IA (embeddings).** O manual foi dividido por seção e a busca usa um algoritmo
   clássico de busca por texto (BM25) mais uma pequena lista de sinônimos ("me arrependi" → arrependimento/devolução). Com só ~8
   páginas, usar embeddings (busca semântica) adicionaria complexidade sem ganho claro. O PDF foi convertido para
