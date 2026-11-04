@@ -92,7 +92,7 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
   é uma reimplementação independente em Python, sem código copiado.
 - **Modelo: DeepSeek via OpenRouter.** Custo baixo, bom suporte a tool calling e uma chave só para trocar de modelo (`OPENROUTER_MODEL`).
   O loop desliga o *reasoning* por padrão (`EMPORIO_REASONING=default` reativa) porque não reenvia `reasoning_details` entre chamadas
-  de ferramenta. *Não consegui validar o slug exato do modelo sem a chave: use `scripts/check_openrouter.py`.*
+  de ferramenta. *O slug `deepseek/deepseek-v4.1-flash` vem da página do modelo no OpenRouter; não consegui chamar a API daqui, então confirme com `scripts/check_openrouter.py`.*
 - **Interface: chat web (React) + CLI + DeepSeek Harness opcional.** O `dsh` é um harness de agente de código; para atendimento, o overlay
   (`scripts/setup_dsh.py`) cria um preset só com persona + MCP da loja, **sem shell, arquivos ou web**, e desliga os presets padrão.
 - **Histórico:** SQLite (stdlib), uma linha por mensagem no formato da API; retoma por `--session`, com janela das últimas 40 mensagens

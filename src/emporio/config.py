@@ -12,7 +12,7 @@ STATE_DIR = Path(os.getenv("EMPORIO_STATE_DIR", ROOT / "var"))  # histórico (SQ
 TZ = ZoneInfo("America/Campo_Grande")
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-DEFAULT_MODEL = "~deepseek/deepseek-v4-flash-latest"
+DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 
 
 def model_name() -> str:
