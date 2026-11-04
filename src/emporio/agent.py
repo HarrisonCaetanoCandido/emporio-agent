@@ -128,7 +128,7 @@ class EmporioAgent:
 
             assistant = {
                 "role": "assistant",
-                "content": msg.content or None,
+                "content": (msg.content or "").strip() or None,
                 "tool_calls": [
                     {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
                     for c in calls
