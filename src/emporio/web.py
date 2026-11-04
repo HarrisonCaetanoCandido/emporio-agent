@@ -41,29 +41,33 @@ TOOL_LABELS = {
 }
 
 
-def _labels(tool_names: list[str]) -> list[str]:
-    seen: list[str] = []
-    for n in tool_names:
-        label = TOOL_LABELS.get(n, n)
-        if label not in seen:
-            seen.append(label)
-    return seen
+def _tool_entry(name: str, arguments: str, result: str) -> dict:
+    return {"name": name, "label": TOOL_LABELS.get(name, name), "arguments": arguments, "result": result}
 
 
-def history_for_ui(messages: list[dict]) -> list[dict]:
-    """Só texto visível ao cliente; as ferramentas usadas viram rótulos na resposta seguinte."""
+def history_for_ui(rows: list[tuple[dict, str]]) -> list[dict]:
+    """Só texto visível ao cliente; as ferramentas usadas viram atividade (nome, args, resultado) na resposta seguinte."""
     out: list[dict] = []
-    pending: list[str] = []
-    for m in messages:
+    pending: list[dict] = []
+    pending_by_id: dict[str, dict] = {}
+    for m, ts in rows:
         role = m.get("role")
         if role == "user":
-            pending = []
-            out.append({"role": "user", "text": m.get("content") or ""})
+            pending, pending_by_id = [], {}
+            out.append({"role": "user", "text": m.get("content") or "", "ts": ts})
         elif role == "assistant":
-            pending += [tc["function"]["name"] for tc in m.get("tool_calls") or []]
+            for tc in m.get("tool_calls") or []:
+                fn = tc["function"]
+                entry = _tool_entry(fn["name"], fn.get("arguments") or "{}", "")
+                pending.append(entry)
+                pending_by_id[tc["id"]] = entry
             if m.get("content") and not m.get("tool_calls"):
-                out.append({"role": "assistant", "text": m["content"], "tools": _labels(pending)})
-                pending = []
+                out.append({"role": "assistant", "text": m["content"], "tools": pending, "ts": ts})
+                pending, pending_by_id = [], {}
+        elif role == "tool":
+            entry = pending_by_id.get(m.get("tool_call_id", ""))
+            if entry is not None:
+                entry["result"] = m.get("content") or ""
     return out
 
 
@@ -105,7 +109,7 @@ def make_handler(agent: EmporioAgent, static_dir: Path | None = None):
                 sid = (parse_qs(url.query).get("session_id") or [""])[0]
                 if not SESSION_RE.match(sid):
                     return self._json(400, {"error": "session_id inválido"})
-                return self._json(200, {"messages": history_for_ui(agent.store.history(sid))})
+                return self._json(200, {"messages": history_for_ui(agent.store.history_with_timestamps(sid))})
             if url.path.startswith("/api/"):
                 return self._json(404, {"error": "não encontrado"})
             self._serve(unquote(url.path).lstrip("/"))
@@ -141,7 +145,9 @@ def make_handler(agent: EmporioAgent, static_dir: Path | None = None):
             except Exception:  # noqa: BLE001 - não vaza stack/chave para o navegador
                 log.exception("falha ao responder")
                 return self._json(502, {"error": "model_error", "reply": FALLBACK_TEXT})
-            self._json(200, {"reply": reply.text, "tools": _labels([t.name for t in reply.tool_calls])})
+            tools = [_tool_entry(t.name, t.arguments, json.dumps(t.result, ensure_ascii=False)) for t in reply.tool_calls]
+            ts = config.now().isoformat(timespec="seconds")
+            self._json(200, {"reply": reply.text, "tools": tools, "ts": ts})
 
     return Handler
 
