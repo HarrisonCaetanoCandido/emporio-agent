@@ -1,6 +1,7 @@
 """Servidor MCP (stdio) com as mesmas ferramentas do loop em Python.
 
-É assim que o DeepSeek Harness (ou qualquer cliente MCP) enxerga a loja:
+Expõe o catálogo, pedidos e políticas da loja para qualquer cliente MCP (Claude Desktop, outros
+agentes, etc.):
     python -m emporio.mcp_server
 
 stdout é o canal do protocolo — nada além do MCP pode ser impresso nele (logs vão para stderr).
