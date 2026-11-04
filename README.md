@@ -5,7 +5,7 @@ Protótipo do desafio técnico de AI Engineer (Artefact): um agente de mensagens
 
 - **Linguagem:** Python 3.10+.
 - **Modelo:** DeepSeek via **OpenRouter** (API OpenAI-compatível).
-- **Interfaces:** CLI em Python e **Web UI** do [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`).
+- **Interfaces:** chat web (**Vite + React**, servido pela API Python), CLI em Python e, opcionalmente, a Web UI do DeepSeek Harness (`dsh`).
 
 ## Como rodar
 
@@ -14,8 +14,19 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env            # preencha OPENROUTER_API_KEY
 python scripts/check_openrouter.py   # lista modelos DeepSeek com tool calling e confere OPENROUTER_MODEL
-pytest -q                       # 16 testes, não usam rede nem chave
+pytest -q                       # testes do backend: não usam rede nem chave
 ```
+
+**Chat web** (Python 3.10+ e Node 20+):
+
+```bash
+cd frontend && npm install && npm run build && cd ..   # gera frontend/dist
+python -m emporio.web                                  # http://127.0.0.1:8000
+# desenvolvimento do front: python -m emporio.web  +  (cd frontend && npm run dev)  -> http://localhost:5173 (proxy /api)
+# testes do front: (cd frontend && npm test)
+```
+
+A API serve o build e expõe `POST /api/chat` e `GET /api/history`. Escuta só em 127.0.0.1 e não tem autenticação (protótipo).
 
 **CLI** (mais simples, só Python):
 
@@ -51,7 +62,7 @@ cliente ─► LLM (DeepSeek/OpenRouter) ──tool calls──► 7 ferramentas
 
 A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, sem duplicar lógica:
 
-1. **Loop em Python** (`agent.py`): function calling nativo, até 6 passos por mensagem.
+1. **Loop em Python** (`agent.py`): function calling nativo, até 6 passos por mensagem (um passo = uma ida ao modelo).
 2. **Servidor MCP stdio** (`mcp_server.py`): é como o DeepSeek Harness enxerga a loja.
 
 | Ferramenta | Para quê |
@@ -73,10 +84,16 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
   ("me arrependi" → arrependimento/devolução). O manual tem ~8 páginas com seções autocontidas; embeddings adicionariam
   dependência e não-determinismo sem ganho claro. O PDF foi convertido para `data/politicas_da_loja.md` (cada trecho citado
   carrega o número da seção). Limite conhecido: sinônimos manuais não escalam para um manual grande — aí valeria híbrido com embeddings.
+- **Robustez do loop.** Cada chamada de ferramenta sempre recebe um resultado (erro genérico, sem vazar a exceção) e a chamada do
+  assistente só é gravada junto com todos os resultados, então o histórico nunca fica com `tool_calls` sem resposta. Ferramentas de
+  leitura pedidas no mesmo passo rodam em paralelo; `consultar_pedido` e `encaminhar_atendente` (estado/efeito colateral) forçam
+  execução em série. Definições de ferramentas e prompt são idênticos em todos os passos (prefixo estável, bom para cache do provedor).
+  Esses pontos foram inspirados na descrição pública do loop do DeepSeek Harness (`@deepseek-ai/dsh-agent-loop`, MIT);
+  é uma reimplementação independente em Python, sem código copiado.
 - **Modelo: DeepSeek via OpenRouter.** Custo baixo, bom suporte a tool calling e uma chave só para trocar de modelo (`OPENROUTER_MODEL`).
   O loop desliga o *reasoning* por padrão (`EMPORIO_REASONING=default` reativa) porque não reenvia `reasoning_details` entre chamadas
   de ferramenta. *Não consegui validar o slug exato do modelo sem a chave: use `scripts/check_openrouter.py`.*
-- **Interface: CLI + DeepSeek Harness.** O `dsh` é um harness de agente de código; para atendimento, o overlay
+- **Interface: chat web (React) + CLI + DeepSeek Harness opcional.** O `dsh` é um harness de agente de código; para atendimento, o overlay
   (`scripts/setup_dsh.py`) cria um preset só com persona + MCP da loja, **sem shell, arquivos ou web**, e desliga os presets padrão.
 - **Histórico:** SQLite (stdlib), uma linha por mensagem no formato da API; retoma por `--session`, com janela das últimas 40 mensagens
   (sem cortar no meio de um par tool_call/tool). No harness, o histórico é o das sessões dele.
@@ -108,7 +125,8 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 
 ## Limitações conhecidas e próximos passos
 
-- **Não testei com um modelo real** (sem chave no ambiente de desenvolvimento) nem a Web UI no navegador. Validei: testes unitários, o
+- **Não testei com um modelo real** (o ambiente de desenvolvimento não alcançava o OpenRouter). O chat React foi verificado no navegador
+  (Chrome headless) contra um servidor OpenAI-compatível falso, e a Web UI do harness não foi aberta no navegador. Validei: testes unitários, o
   servidor MCP por stdio, e o harness real (perfil `headless`) contra um servidor OpenAI-compatível falso, confirmando persona, ferramentas
   expostas e o ciclo tool_call → resultado. Já o preset da Web UI foi validado só até a composição do config e a subida do servidor.
   `examples/` é gerado por `scripts/generate_examples.py` na primeira execução com chave.

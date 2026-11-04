@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +18,10 @@ from .tools import execute, openai_tools
 
 FALLBACK_TEXT = "Poxa, tive um problema aqui para concluir sua consulta. Pode repetir a pergunta? Se preferir, a equipe da loja te atende pelo WhatsApp."
 MAX_HISTORY_MESSAGES = 40
+MAX_PARALLEL_TOOL_CALLS = 4
+# Ferramentas com efeito colateral ou estado (arquivo de encaminhamentos, rate limit de pedidos):
+# se aparecerem num passo, o passo inteiro roda em série, na ordem pedida pelo modelo.
+EXCLUSIVE_TOOLS = frozenset({"encaminhar_atendente", "consultar_pedido"})
 
 
 @dataclass
@@ -71,6 +76,8 @@ class EmporioAgent:
         self.system_prompt = system_prompt
         self.max_steps = max_steps
         self.temperature = temperature
+        # Prefixo estável: mesmas definições de tools, byte a byte, em todos os passos (ajuda o cache do provedor).
+        self._tools = openai_tools()
 
     @property
     def client(self):
@@ -85,6 +92,20 @@ class EmporioAgent:
             return None
         return {"reasoning": {"enabled": False}}
 
+    @staticmethod
+    def _run_one(call: Any) -> dict:
+        try:
+            return execute(call.function.name, call.function.arguments or "{}")
+        except Exception as exc:  # noqa: BLE001 - toda chamada recebe um resultado, mesmo em falha inesperada
+            return {"erro": f"Falha ao executar {call.function.name}: {type(exc).__name__}"}
+
+    def _run_tools(self, calls: list[Any]) -> list[dict]:
+        """Um resultado por chamada, na ordem pedida. Leituras independentes rodam em paralelo."""
+        if len(calls) == 1 or any(c.function.name in EXCLUSIVE_TOOLS for c in calls):
+            return [self._run_one(c) for c in calls]
+        with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_TOOL_CALLS, len(calls))) as pool:
+            return list(pool.map(self._run_one, calls))
+
     def reply(self, session_id: str, user_text: str) -> AgentReply:
         self.store.append(session_id, {"role": "user", "content": user_text})
         history = _window(self.store.history(session_id))
@@ -92,7 +113,7 @@ class EmporioAgent:
 
         traces: list[ToolTrace] = []
         for step in range(1, self.max_steps + 1):
-            kwargs: dict[str, Any] = dict(model=self.model, messages=convo, tools=openai_tools(), tool_choice="auto", temperature=self.temperature)
+            kwargs: dict[str, Any] = dict(model=self.model, messages=convo, tools=self._tools, tool_choice="auto", temperature=self.temperature)
             extra = self._extra_body()
             if extra:
                 kwargs["extra_body"] = extra
@@ -113,14 +134,16 @@ class EmporioAgent:
                     for c in calls
                 ],
             }
-            convo.append(assistant)
-            self.store.append(session_id, assistant)
-            for c in calls:
-                result = execute(c.function.name, c.function.arguments or "{}")
-                traces.append(ToolTrace(c.function.name, c.function.arguments or "{}", result))
-                tool_msg = {"role": "tool", "tool_call_id": c.id, "content": json.dumps(result, ensure_ascii=False)}
-                convo.append(tool_msg)
-                self.store.append(session_id, tool_msg)
+            results = self._run_tools(calls)
+            tool_msgs = []
+            for c, result in zip(calls, results):
+                args = c.function.arguments or "{}"
+                traces.append(ToolTrace(c.function.name, args, result))
+                tool_msgs.append({"role": "tool", "tool_call_id": c.id, "content": json.dumps(result, ensure_ascii=False)})
+            # Grava a chamada e todos os resultados juntos: o histórico nunca guarda tool_calls sem resposta.
+            for m in (assistant, *tool_msgs):
+                convo.append(m)
+                self.store.append(session_id, m)
 
         self.store.append(session_id, {"role": "assistant", "content": FALLBACK_TEXT})
         return AgentReply(text=FALLBACK_TEXT, tool_calls=traces, steps=self.max_steps)
