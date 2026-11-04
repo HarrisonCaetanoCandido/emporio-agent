@@ -1,17 +1,26 @@
 export type Role = 'user' | 'assistant'
 
+export interface ToolActivity {
+  name: string
+  label: string
+  arguments: string
+  result: string
+}
+
 export interface ChatMessage {
   id: string
   role: Role
   text: string
-  tools?: string[]
+  tools?: ToolActivity[]
   error?: boolean
+  ts?: string
 }
 
 interface HistoryItem {
   role: Role
   text: string
-  tools?: string[]
+  tools?: ToolActivity[]
+  ts?: string
 }
 
 const SESSION_KEY = 'emporio_session'
@@ -51,7 +60,8 @@ export async function fetchHistory(sessionId: string): Promise<HistoryItem[]> {
 export interface ChatResult {
   ok: boolean
   reply: string
-  tools: string[]
+  tools: ToolActivity[]
+  ts?: string
 }
 
 export async function sendMessage(sessionId: string, message: string): Promise<ChatResult> {
@@ -61,8 +71,8 @@ export async function sendMessage(sessionId: string, message: string): Promise<C
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, message }),
     })
-    const data = (await res.json().catch(() => ({}))) as { reply?: string; tools?: string[] }
-    if (res.ok) return { ok: true, reply: data.reply ?? '', tools: data.tools ?? [] }
+    const data = (await res.json().catch(() => ({}))) as { reply?: string; tools?: ToolActivity[]; ts?: string }
+    if (res.ok) return { ok: true, reply: data.reply ?? '', tools: data.tools ?? [], ts: data.ts }
     return {
       ok: false,
       reply: data.reply ?? 'Não consegui responder agora. Tente de novo em instantes.',
