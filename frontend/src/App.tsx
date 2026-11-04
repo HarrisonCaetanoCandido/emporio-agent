@@ -7,6 +7,8 @@ import {
   sendMessage,
   type ChatMessage,
 } from './api'
+import { Activity } from './Activity'
+import { MessageMeta } from './MessageMeta'
 import { MessageText } from './MessageText'
 
 const GREETING =
@@ -27,8 +29,11 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const areaRef = useRef<HTMLTextAreaElement>(null)
+  const chatRef = useRef<HTMLElement>(null)
+  const atBottomRef = useRef(true)
 
   // Restaura o histórico da sessão salva no navegador.
   useEffect(() => {
@@ -36,7 +41,7 @@ export default function App() {
     fetchHistory(sessionId)
       .then((items) => {
         if (cancelled) return
-        setMessages(items.map((m) => ({ id: nextId(), role: m.role, text: m.text, tools: m.tools })))
+        setMessages(items.map((m) => ({ id: nextId(), role: m.role, text: m.text, tools: m.tools, ts: m.ts })))
       })
       .catch(() => {
         if (!cancelled) setMessages([])
@@ -46,9 +51,28 @@ export default function App() {
     }
   }, [sessionId])
 
+  // Só acompanha o fim da conversa automaticamente se o usuário já estava lá; senão, mostra o botão de "ir para o fim".
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    if (atBottomRef.current) {
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    } else {
+      setShowScrollBtn(true)
+    }
   }, [messages, busy])
+
+  const onChatScroll = useCallback(() => {
+    const el = chatRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96
+    atBottomRef.current = atBottom
+    setShowScrollBtn(!atBottom)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    atBottomRef.current = true
+    setShowScrollBtn(false)
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [])
 
   // Textarea cresce com o conteúdo (via CSSOM, compatível com a CSP sem inline style).
   useEffect(() => {
@@ -64,11 +88,11 @@ export default function App() {
       if (!text || busy) return
       setInput('')
       setBusy(true)
-      setMessages((prev) => [...prev, { id: nextId(), role: 'user', text }])
+      setMessages((prev) => [...prev, { id: nextId(), role: 'user', text, ts: new Date().toISOString() }])
       const result = await sendMessage(sessionId, text)
       setMessages((prev) => [
         ...prev,
-        { id: nextId(), role: 'assistant', text: result.reply, tools: result.tools, error: !result.ok },
+        { id: nextId(), role: 'assistant', text: result.reply, tools: result.tools, error: !result.ok, ts: result.ts },
       ])
       setBusy(false)
       areaRef.current?.focus()
@@ -101,10 +125,30 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="22" height="22">
-              <path d="M10 21V11l12-2v10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="9" cy="21" r="2.4" fill="currentColor" />
-              <circle cx="21" cy="19" r="2.4" fill="currentColor" />
+            <svg viewBox="0 0 32 32" width="30" height="30">
+              <defs>
+                <linearGradient id="holo" x1="2" y1="29" x2="30" y2="3" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stopColor="#1890d7" />
+                  <stop offset="0.5" stopColor="#8b5cf6" />
+                  <stop offset="1" stopColor="#ff0066" />
+                </linearGradient>
+                <radialGradient id="gloss" cx="0.5" cy="0.5" r="0.5">
+                  <stop offset="0" stopColor="#ffffff" stopOpacity="0.95" />
+                  <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <path
+                d="M13 24.5V8.8a1 1 0 0 1 0.78-0.98l11-2.4a1 1 0 0 1 1.22 0.98V19"
+                fill="none"
+                stroke="url(#holo)"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="10" cy="24.5" r="4" fill="url(#holo)" />
+              <circle cx="23" cy="19" r="4" fill="url(#holo)" />
+              <ellipse cx="8.4" cy="22.6" rx="1.7" ry="1" fill="url(#gloss)" transform="rotate(-25 8.4 22.6)" />
+              <ellipse cx="21.4" cy="17.1" rx="1.7" ry="1" fill="url(#gloss)" transform="rotate(-25 21.4 17.1)" />
             </svg>
           </span>
           <div className="brand-text">
@@ -117,7 +161,7 @@ export default function App() {
         </button>
       </header>
 
-      <main className="chat" aria-live="polite">
+      <main className="chat" aria-live="polite" ref={chatRef} onScroll={onChatScroll}>
         <div className="thread">
           <div className="msg bot">
             <div className="bubble">
@@ -127,15 +171,11 @@ export default function App() {
 
           {messages.map((m) => (
             <div key={m.id} className={`msg ${m.role === 'user' ? 'user' : 'bot'}`}>
+              {m.role === 'assistant' && m.tools && m.tools.length > 0 && <Activity tools={m.tools} />}
               <div className={`bubble${m.error ? ' error' : ''}`}>
                 <MessageText text={m.text} />
               </div>
-              {m.role === 'assistant' && m.tools && m.tools.length > 0 && (
-                <div className="trace">
-                  <span className="dot" aria-hidden="true" />
-                  Consultou: {m.tools.join(', ')}
-                </div>
-              )}
+              <MessageMeta text={m.text} ts={m.ts} />
             </div>
           ))}
 
@@ -161,6 +201,14 @@ export default function App() {
           <div ref={endRef} />
         </div>
       </main>
+
+      {showScrollBtn && (
+        <button type="button" className="scroll-down" onClick={scrollToBottom} aria-label="Ir para o fim da conversa">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M12 5v14M5 12l7 7 7-7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
 
       <form className="composer" onSubmit={onSubmit}>
         <textarea
