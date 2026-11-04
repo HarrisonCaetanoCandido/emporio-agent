@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 function formatTime(ts?: string): string {
   if (!ts) return ''
@@ -11,11 +11,17 @@ function formatTime(ts?: string): string {
 export function MessageMeta({ text, ts }: { text: string; ts?: string }) {
   const [copied, setCopied] = useState(false)
 
+  // Some após 1.5s; o cleanup evita "setState" num componente já desmontado (ex.: troca de conversa).
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
     } catch {
       /* clipboard indisponível (ex.: contexto não seguro): ignora */
     }
