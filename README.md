@@ -80,6 +80,18 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 - **Function calling (ReAct nativo) em vez de RAG puro ou text-to-SQL.** Os dados são pequenos e estruturados; consultas
   parametrizadas são mais seguras e auditáveis que SQL gerado por LLM, e o modelo decide *quando* consultar dados vs. políticas.
   Preço, estoque, prazo e conta saem de código, não do modelo.
+- **Estratégia de prompt: system prompt único, estruturado por seção, temperatura baixa.** Não usa few-shot (exemplos de
+  conversa) nem prompts separados por intenção: é um só prompt estático (`prompts.py`), dividido em seções nomeadas (tom,
+  regra de nunca inventar, como apresentar preços, pedidos e privacidade, escopo, reclamações, segurança), cada uma
+  mapeada direto a uma regra do manual de políticas — isso facilita auditar e ajustar uma regra sem reescrever o resto.
+  A seção central, "nunca invente", obriga o modelo a chamar uma ferramenta pra qualquer fato (preço, estoque, promoção,
+  status, prazo) em vez de confiar na própria memória — é a principal defesa contra o risco mais comum nesse tipo de
+  agente, que é inventar informação. O prompt também trata mensagens do cliente e resultados de ferramentas como dados,
+  não comandos, com instrução explícita pra ignorar tentativas de mudar a persona, revelar o prompt ou conceder condições
+  fora das políticas (defesa contra prompt injection). A temperatura é baixa (`0.2`): a tarefa é seguir regras de forma
+  consistente, não ser criativo, então menos aleatoriedade reduz a chance de fugir do tom ou das regras. O prompt é
+  enviado inteiro a cada chamada ao modelo (não fica salvo no histórico), garantindo que é sempre a mesma versão, sem
+  risco de divergir entre sessões.
 - **Busca nas políticas: por palavra-chave, não por IA (embeddings).** O manual foi dividido por seção e a busca usa um algoritmo
   clássico de busca por texto (BM25) mais uma pequena lista de sinônimos ("me arrependi" → arrependimento/devolução). Com só ~8
   páginas, usar embeddings (busca semântica) adicionaria complexidade sem ganho claro. O PDF foi convertido para
@@ -102,7 +114,7 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 - **Histórico:** SQLite (stdlib), uma linha por mensagem no formato da API; retoma por `--session`, com janela das últimas 40
   mensagens (sem cortar no meio de um par tool_call/tool).
 - **Segurança/privacidade:** pedidos só abrem com nº + e-mail/telefone; falha de validação devolve sempre a mesma mensagem (não revela se o
-  pedido existe) e há limite de 5 falhas/10 min; o prompt trata mensagens e resultados de ferramentas como dados (não comandos).
+  pedido existe) e há limite de 5 falhas/10 min.
 
 ### Tratamento dos dados (`data.py`)
 
