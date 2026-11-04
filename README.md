@@ -1,6 +1,6 @@
 # Bia — agente de atendimento da Empório da Música
 
-Protótipo do desafio técnico de AI Engineer (Artefact): um agente de mensagens para a loja fictícia de instrumentos
+Um agente de mensagens para a loja fictícia de instrumentos
 **Empório da Música** (Campo Grande/MS). A persona é a **Bia**: informal, acolhedora e que só afirma o que consultou.
 
 - **Linguagem:** Python 3.10+.
