@@ -51,6 +51,11 @@ python scripts/generate_examples.py
 
 ## Arquitetura
 
+Não é RAG nem usa um framework agente de terceiros: é um loop ReAct escrito à mão em Python (`agent.py`), com function
+calling nativo sobre o modelo DeepSeek via OpenRouter — sem retrieval semântico/vetorial (ver "Busca nas políticas" em
+Decisões técnicas) e sem dependência do DeepSeek Harness (`dsh`), que serviu só de inspiração de design (ver "Robustez do
+loop").
+
 ```mermaid
 flowchart LR
     Cliente(["💬 Cliente"]) -->|mensagem| LLM["🧠 LLM — DeepSeek<br/>via OpenRouter"]
