@@ -36,6 +36,14 @@ class ConversationStore:
             rows = c.execute("SELECT payload FROM messages WHERE session_id=? ORDER BY id", (session_id,)).fetchall()
         return [json.loads(r[0]) for r in rows]
 
+    def history_with_timestamps(self, session_id: str) -> list[tuple[dict, str]]:
+        """Como history(), mas junto do horário (created_at) de cada mensagem — usado só pela UI web."""
+        with closing(self._conn()) as c:
+            rows = c.execute(
+                "SELECT payload, created_at FROM messages WHERE session_id=? ORDER BY id", (session_id,)
+            ).fetchall()
+        return [(json.loads(payload), created_at) for payload, created_at in rows]
+
     def sessions(self) -> list[dict]:
         with closing(self._conn()) as c:
             rows = c.execute(

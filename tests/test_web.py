@@ -81,10 +81,15 @@ def test_chat_com_ferramenta_e_historico(server):
     ])
     status, body, _ = call(base + "/api/chat", {"session_id": "sessao-123456", "message": "Quanto custa o GD20?"})
     out = json.loads(body)
-    assert status == 200 and out["reply"].startswith("O GD20") and out["tools"] == ["catálogo"]
+    assert status == 200 and out["reply"].startswith("O GD20") and out["ts"]
+    assert [t["name"] for t in out["tools"]] == ["obter_produto"]
+    assert out["tools"][0]["label"] == "catálogo"
+    assert json.loads(out["tools"][0]["arguments"]) == {"produto": "Takamine GD20"}
     status, body, _ = call(base + "/api/history?session_id=sessao-123456")
     msgs = json.loads(body)["messages"]
-    assert [m["role"] for m in msgs] == ["user", "assistant"] and msgs[1]["tools"] == ["catálogo"]
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    assert all(m["ts"] for m in msgs)
+    assert [t["name"] for t in msgs[1]["tools"]] == ["obter_produto"]
 
 
 def test_validacao_de_entrada(server):
@@ -104,11 +109,29 @@ def test_erro_do_modelo_nao_vaza_detalhes(server):
     assert status == 502 and b"sk-secreta" not in body and "reply" in json.loads(body)
 
 
-def test_history_for_ui_ignora_mensagens_de_tool():
-    msgs = [
-        {"role": "user", "content": "oi"},
-        {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "consultar_politicas", "arguments": "{}"}}]},
-        {"role": "tool", "tool_call_id": "1", "content": "{}"},
-        {"role": "assistant", "content": "Resposta"},
+def test_history_for_ui_junta_tool_calls_com_seus_resultados_e_horario():
+    rows = [
+        ({"role": "user", "content": "oi"}, "2026-02-20T10:00:00"),
+        (
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "consultar_politicas", "arguments": '{"pergunta":"troca"}'}}]},
+            "2026-02-20T10:00:01",
+        ),
+        ({"role": "tool", "tool_call_id": "1", "content": '{"trechos": []}'}, "2026-02-20T10:00:01"),
+        ({"role": "assistant", "content": "Resposta"}, "2026-02-20T10:00:02"),
     ]
-    assert history_for_ui(msgs) == [{"role": "user", "text": "oi"}, {"role": "assistant", "text": "Resposta", "tools": ["políticas da loja"]}]
+    assert history_for_ui(rows) == [
+        {"role": "user", "text": "oi", "ts": "2026-02-20T10:00:00"},
+        {
+            "role": "assistant",
+            "text": "Resposta",
+            "ts": "2026-02-20T10:00:02",
+            "tools": [
+                {
+                    "name": "consultar_politicas",
+                    "label": "políticas da loja",
+                    "arguments": '{"pergunta":"troca"}',
+                    "result": '{"trechos": []}',
+                }
+            ],
+        },
+    ]
