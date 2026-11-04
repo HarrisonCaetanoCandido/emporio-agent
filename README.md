@@ -148,3 +148,5 @@ O projeto foi desenvolvido com o **Claude Code (Anthropic)** em modo agente, com
   executou a validação end-to-end contra o modelo real (DeepSeek via OpenRouter), incluindo a geração dos `examples/`.
 - Antes de cada entrega (PR), foi usada a skill `simplify` do Claude Code para revisar o próprio diff (reuso, qualidade e
   eficiência) e corrigir o que fosse encontrado, inclusive retroativamente nas primeiras entregas.
+- As operações no GitHub (criação de branches, commits, abertura e merge das PRs) foram feitas pelo próprio Claude Code
+  usando a `gh` CLI, simulando um fluxo de entregas incrementais em vez de um único commit.
