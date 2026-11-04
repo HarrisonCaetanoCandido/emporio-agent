@@ -1,166 +1,176 @@
-# Bia — agente de atendimento da Empório da Música
+# Bia — Empório da Música customer service agent
 
-Um agente de mensagens para a loja fictícia de instrumentos
-**Empório da Música** (Campo Grande/MS). A persona é a **Bia**: informal, acolhedora e que só afirma o que consultou.
+A messaging agent for the fictional musical instrument store
+**Empório da Música** (Campo Grande/MS, Brazil). The persona is **Bia**: informal, welcoming, and who only states what she checked.
 
-- **Linguagem:** Python 3.10+.
-- **Modelo:** `deepseek/deepseek-v4.1-flash` via **OpenRouter** (API OpenAI-compatível).
-- **Interfaces:** chat web (**Vite + React**, servido pela API Python) e CLI em Python.
+- **Language:** Python 3.10+.
+- **Model:** `deepseek/deepseek-v4.1-flash` via **OpenRouter** (OpenAI-compatible API).
+- **Interfaces:** web chat (**Vite + React**, served by the Python API) and a Python CLI.
 
-## Como rodar
+## How to run
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env            # preencha OPENROUTER_API_KEY
-python scripts/check_openrouter.py   # lista modelos DeepSeek com tool calling e confere OPENROUTER_MODEL
-pytest -q                       # testes do backend: não usam rede nem chave
+cp .env.example .env            # fill in OPENROUTER_API_KEY
+python scripts/check_openrouter.py   # lists DeepSeek models with tool calling and checks OPENROUTER_MODEL
+pytest -q                       # backend tests: no network or API key needed
 ```
 
-**Chat web** (Python 3.10+ e Node 20+):
+**Web chat** (Python 3.10+ and Node 20+):
 
 ```bash
-cd frontend && npm install && npm run build && cd ..   # gera frontend/dist
+cd frontend && npm install && npm run build && cd ..   # builds frontend/dist
 python -m emporio.web                                  # http://127.0.0.1:8000
-# desenvolvimento do front: python -m emporio.web  +  (cd frontend && npm run dev)  -> http://localhost:5173 (proxy /api)
-# testes do front: (cd frontend && npm test)
+# frontend dev mode: python -m emporio.web  +  (cd frontend && npm run dev)  -> http://localhost:5173 (proxies /api)
+# frontend tests: (cd frontend && npm test)
 ```
 
-A API serve o build e expõe `POST /api/chat` e `GET /api/history`. Escuta só em 127.0.0.1 e não tem autenticação (protótipo).
+The API serves the build and exposes `POST /api/chat` and `GET /api/history`. It only listens on 127.0.0.1 and has no authentication (prototype).
 
-Ou mais simples, só sobe tudo de uma vez:
+Or simpler, bring everything up at once:
 
 ```bash
 ./start.sh
 ```
 
-**CLI** (mais simples, só Python):
+**CLI** (simplest, Python only):
 
 ```bash
-python -m emporio.cli --trace   # --trace mostra as ferramentas chamadas; comandos: /novo /sessoes /trace /exportar /sair
+python -m emporio.cli --trace   # --trace shows the tools called; commands: /novo /sessoes /trace /exportar /sair
 ```
 
-**Conversas de exemplo** (rodam cenários reais contra o modelo e gravam as transcrições em `examples/`):
+**Example conversations** (run real scenarios against the model and record the transcripts in `examples/`):
 
 ```bash
 python scripts/generate_examples.py
 ```
 
-> Os dados de exemplo terminam em mar/2026, então os prazos de devolução dependem da data. `EMPORIO_NOW=2026-02-20T10:00:00`
-> fixa o "agora" (o gerador de exemplos já faz isso).
+> The sample data ends in Mar/2026, so return deadlines depend on the current date. `EMPORIO_NOW=2026-02-20T10:00:00`
+> pins "now" (the example generator already does this).
 
-## Arquitetura
+## Architecture
+
+Not RAG, and not built on a third-party agent framework: it's a hand-written ReAct loop in Python (`agent.py`), with
+native function calling over the DeepSeek model via OpenRouter — no semantic/vector retrieval (see "Policy search" under
+Technical decisions) and no dependency on the DeepSeek Harness (`dsh`), which only served as a design inspiration (see
+"Loop robustness").
 
 ```mermaid
 flowchart LR
-    Cliente(["💬 Cliente"]) -->|mensagem| LLM["🧠 LLM — DeepSeek<br/>via OpenRouter"]
-    LLM -->|tool calls| Ferramentas["🛠️ 7 ferramentas Python<br/>determinísticas"]
-    Ferramentas -->|resultados JSON| LLM
-    LLM -->|resposta| Cliente
-    Ferramentas -.-> Dados[("CSVs tratados<br/>manual de políticas BM25<br/>SQLite e JSONL")]
+    Cliente(["💬 Customer"]) -->|message| LLM["🧠 LLM — DeepSeek<br/>via OpenRouter"]
+    LLM -->|tool calls| Ferramentas["🛠️ 7 deterministic<br/>Python tools"]
+    Ferramentas -->|JSON results| LLM
+    LLM -->|reply| Cliente
+    Ferramentas -.-> Dados[("Cleaned CSVs<br/>BM25 policy manual<br/>SQLite and JSONL")]
 ```
 
-A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, sem duplicar lógica:
+The same tool list (`src/emporio/tools.py`) is used in two ways, without duplicating logic:
 
-1. **Loop em Python** (`agent.py`): function calling nativo, até 6 passos por mensagem (um passo = uma ida ao modelo).
-2. **Servidor MCP stdio** (`mcp_server.py`): as mesmas ferramentas expostas para qualquer cliente MCP (ex.: Claude Desktop).
+1. **Python loop** (`agent.py`): native function calling, up to 6 steps per message (one step = one round trip to the model).
+2. **MCP stdio server** (`mcp_server.py`): the same tools exposed to any MCP client (e.g., Claude Desktop).
 
-| Ferramenta | Para quê |
+| Tool | What it's for |
 |---|---|
-| `buscar_produtos` | opções por categoria/faixa de preço/termos; só itens vendáveis por padrão |
-| `obter_produto` | preço, promoção, estoque, specs; alternativas se indisponível |
-| `simular_pagamento` | PIX, parcelas válidas, frete e combinação de pagamentos |
-| `consultar_pedido` | status/rastreio/prazos (exige nº do pedido + e-mail ou telefone) |
-| `consultar_politicas` | busca no manual, devolve a seção como fonte |
-| `horario_atendimento` | aberto agora? considera sábado, domingo e feriados de MS |
-| `encaminhar_atendente` | registra o caso e devolve protocolo + prazo (24 h úteis) |
+| `buscar_produtos` | options by category/price range/terms; only sellable items by default |
+| `obter_produto` | price, promotion, stock, specs; alternatives if unavailable |
+| `simular_pagamento` | PIX, valid installments, shipping and combined payments |
+| `consultar_pedido` | status/tracking/deadlines (requires order number + email or phone) |
+| `consultar_politicas` | searches the manual, returns the section as the source |
+| `horario_atendimento` | open now? accounts for Saturday, Sunday and MS state holidays |
+| `encaminhar_atendente` | logs the case and returns a protocol number + SLA (24 business hours) |
 
-## Decisões técnicas e justificativas
+## Technical decisions and justifications
 
-- **Function calling (ReAct nativo) em vez de RAG puro ou text-to-SQL.** Os dados são pequenos e estruturados; consultas
-  parametrizadas são mais seguras e auditáveis que SQL gerado por LLM, e o modelo decide *quando* consultar dados vs. políticas.
-  Preço, estoque, prazo e conta saem de código, não do modelo.
-- **Estratégia de prompt: system prompt único, estruturado por seção, temperatura baixa.** Não usa few-shot (exemplos de
-  conversa) nem prompts separados por intenção: é um só prompt estático (`prompts.py`), dividido em seções nomeadas (tom,
-  regra de nunca inventar, como apresentar preços, pedidos e privacidade, escopo, reclamações, segurança), cada uma
-  mapeada direto a uma regra do manual de políticas — isso facilita auditar e ajustar uma regra sem reescrever o resto.
-  A seção central, "nunca invente", obriga o modelo a chamar uma ferramenta pra qualquer fato (preço, estoque, promoção,
-  status, prazo) em vez de confiar na própria memória — é a principal defesa contra o risco mais comum nesse tipo de
-  agente, que é inventar informação. O prompt também trata mensagens do cliente e resultados de ferramentas como dados,
-  não comandos, com instrução explícita pra ignorar tentativas de mudar a persona, revelar o prompt ou conceder condições
-  fora das políticas (defesa contra prompt injection). A temperatura é baixa (`0.2`): a tarefa é seguir regras de forma
-  consistente, não ser criativo, então menos aleatoriedade reduz a chance de fugir do tom ou das regras. O prompt é
-  enviado inteiro a cada chamada ao modelo (não fica salvo no histórico), garantindo que é sempre a mesma versão, sem
-  risco de divergir entre sessões.
-- **Busca nas políticas: por palavra-chave, não por IA (embeddings).** O manual foi dividido por seção e a busca usa um algoritmo
-  clássico de busca por texto (BM25) mais uma pequena lista de sinônimos ("me arrependi" → arrependimento/devolução). Com só ~8
-  páginas, usar embeddings (busca semântica) adicionaria complexidade sem ganho claro. O PDF foi convertido para
-  `data/politicas_da_loja.md`, e cada trecho citado pro cliente vem com o número da seção, pra dar rastreabilidade. Limite: a lista
-  de sinônimos é manual e não escalaria pra um manual bem maior — aí valeria a pena usar busca semântica.
-- **Robustez do loop.** Se uma ferramenta falha, o erro é tratado e devolvido ao modelo de forma genérica (a conversa não quebra).
-  Consultas que o modelo pede ao mesmo tempo (ex.: preço + estoque) rodam em paralelo para responder mais rápido; ações com efeito
-  colateral (abrir consulta de pedido, encaminhar para um atendente) rodam uma de cada vez, por segurança. Esse desenho foi
-  inspirado em como o DeepSeek Harness (`dsh`, projeto open-source) estrutura o loop de um agente — li o código dele e adaptei as
-  ideias pro Python; não usei nem copiei código do projeto.
-- **Por que `deepseek-v4.1-flash`, e não um modelo de fronteira.** A tarefa do agente é consultar os dados certos e devolver uma
-  resposta objetiva — não exige raciocínio longo em várias etapas, então o ganho de um modelo de fronteira (ex.: Astra, Fable, Opus) seria marginal pra esse caso de uso e custaria vários múltiplos mais. O Flash tem o maior benchmark
-  entre os modelos DeepSeek da própria faixa leve/rápida, responde rápido mesmo em conversas com vários turns de chamada de
-  ferramenta (porque cada resposta individual é curta) e custa uma fração do preço por token dos modelos maiores. Pra um chatbot de
-  baixo volume cuja tarefa principal é consulta de dados, isso é o melhor custo-benefício: qualidade suficiente, latência e custo bem
-  menores. O modo "raciocínio" fica desligado por padrão (`EMPORIO_REASONING=default` reativa) porque ainda não é compatível com o
-  jeito que o loop chama as ferramentas.
-- **Interface: chat web (React) + CLI.** O chat web é a experiência principal; a CLI é um atalho mais simples (sem build de
-  frontend) pra testar o agente direto no terminal.
-- **Histórico:** SQLite (stdlib), uma linha por mensagem no formato da API; retoma por `--session`, com janela das últimas 40
-  mensagens (sem cortar no meio de um par tool_call/tool).
-- **Segurança/privacidade:** pedidos só abrem com nº + e-mail/telefone; falha de validação devolve sempre a mesma mensagem (não revela se o
-  pedido existe) e há limite de 5 falhas/10 min.
+- **Function calling (native ReAct) instead of pure RAG or text-to-SQL.** The data is small and structured; parameterized
+  queries are safer and more auditable than LLM-generated SQL, and the model decides *when* to query data vs. policies.
+  Price, stock, deadlines and totals come from code, not from the model.
+- **Prompt strategy: a single system prompt, structured by section, low temperature.** No few-shot (example conversations)
+  and no prompts split by intent: it's one static prompt (`prompts.py`), divided into named sections (tone, the
+  never-invent rule, how to present prices, orders and privacy, scope, complaints, security), each mapped directly to a
+  rule in the policy manual — this makes it easy to audit and tweak one rule without rewriting the rest. The central
+  section, "never invent", forces the model to call a tool for any fact (price, stock, promotion, status, deadline)
+  instead of relying on its own memory — this is the main defense against the most common risk in this kind of agent:
+  making up information. The prompt also treats customer messages and tool results as data, not commands, with explicit
+  instructions to ignore attempts to change the persona, reveal the prompt, or grant conditions outside the policies
+  (prompt injection defense). Temperature is low (`0.2`): the task is to follow rules consistently, not to be creative,
+  so less randomness reduces the chance of drifting from the tone or the rules. The whole prompt is sent on every call to
+  the model (it is never saved to the conversation history), guaranteeing it's always the same version, with no risk of
+  diverging between sessions.
+- **Policy search: keyword-based, not AI-based (embeddings).** The manual was split by section, and the search uses a
+  classic text-search algorithm (BM25) plus a small synonym list ("I regret it" → regret/return). With only ~8 pages,
+  using embeddings (semantic search) would add complexity without a clear benefit. The PDF was converted to
+  `data/politicas_da_loja.md`, and every excerpt quoted to the customer comes with the section number, for traceability.
+  Limitation: the synonym list is manual and wouldn't scale to a much larger manual — that's where semantic search would
+  be worth it.
+- **Loop robustness.** If a tool fails, the error is handled and returned to the model in a generic way (the conversation
+  doesn't break). Queries the model requests at the same time (e.g., price + stock) run in parallel to respond faster;
+  actions with side effects (opening an order lookup, escalating to a human agent) run one at a time, for safety. This
+  design was inspired by how the DeepSeek Harness (`dsh`, an open-source project) structures an agent loop — I read its
+  code and adapted the ideas into Python; I did not use or copy any code from that project.
+- **Why `deepseek-v4.1-flash`, and not a frontier model.** The agent's task is to look up the right data and return an
+  objective answer — it doesn't require long multi-step reasoning, so the gain from a frontier model (e.g., Astra,
+  Fable, Opus) would be marginal for this use case and cost several multiples more. Flash has the best benchmark among
+  DeepSeek's own lightweight/fast tier, responds quickly even in conversations with several tool-call turns (because
+  each individual response is short), and costs a fraction of the per-token price of larger models. For a low-volume
+  chatbot whose main job is data lookup, this is the best cost-benefit: enough quality, much lower latency and cost. The
+  "reasoning" mode is off by default (`EMPORIO_REASONING=default` re-enables it) because it isn't compatible yet with the
+  way the loop calls tools.
+- **Interface: web chat (React) + CLI.** The web chat is the main experience; the CLI is a simpler shortcut (no frontend
+  build needed) to test the agent directly in the terminal.
+- **History:** SQLite (stdlib), one row per message in the API's own format; resumable via `--session`, with a window of
+  the last 40 messages (never cut in the middle of a tool_call/tool pair).
+- **Security/privacy:** orders only open with an order number + email/phone; a failed validation always returns the same
+  message (doesn't reveal whether the order exists), and there's a limit of 5 failures per 10 minutes.
 
-### Tratamento dos dados (`data.py`)
+### Data handling (`data.py`)
 
-| Problema encontrado | Tratamento |
+| Problem found | Handling |
 |---|---|
-| `active` com estoque 0 (Giannini GF-3D) | `sem_estoque`: não vendável, sugere alternativas |
-| `discontinued`/`coming_soon` com estoque > 0 | nunca vendáveis, independente do estoque |
-| Promoções com `is_active=0` (a maioria) | ignoradas; só `is_active=1` vale; se houver mais de uma, a maior |
-| PIX (5%) × promoção | **não cumulativos** (manual 6.2): item promocional não tem preço PIX |
-| `specs` em JSON-texto; `electronics` yes/no | parseados; traduzidos para sim/não |
-| E-mail repetido entre clientes | detectado em `quality_issues()` (validação por pedido+contato continua segura) |
-| Preços | `Decimal`, nunca `float` |
+| `active` with 0 stock (Giannini GF-3D) | `sem_estoque`: not sellable, suggests alternatives |
+| `discontinued`/`coming_soon` with stock > 0 | never sellable, regardless of stock |
+| Promotions with `is_active=0` (most of them) | ignored; only `is_active=1` counts; if more than one, the highest |
+| PIX discount (5%) × promotion | **not stackable** (manual 6.2): promotional items don't get the PIX price |
+| `specs` as JSON-text; `electronics` yes/no | parsed; translated to yes/no |
+| Duplicate email across customers | detected in `quality_issues()` (order+contact validation stays safe) |
+| Prices | `Decimal`, never `float` |
 
-### Suposições e ambiguidades do material
+### Assumptions and ambiguities in the source material
 
-- **Dois telefones no manual** (3341-4444 na ficha da empresa; 3321-4500 no WhatsApp): o prompt manda apresentar ambos com contexto
-  e oferecer confirmação, em vez de escolher um.
-- **E-mail** com acento na seção 1.2 do PDF (`empóriodamusica`): usei a grafia sem acento da capa.
-- **Parcelamento "até 3x sem mínimo (exceto abaixo de R$ 50)":** interpretado como piso de R$ 50 por parcela.
-- **Data de recebimento** não existe nos dados; uso a `estimated_delivery` de pedidos entregues e aviso que a equipe confirma a elegibilidade.
-- **Manual diz "300+ instrumentos"**, o CSV tem 65: o agente só fala do que as ferramentas retornam.
-- **Frete:** o manual diz "acima de R$ 500" para frete grátis; trato exatamente R$ 500,00 como pago.
-- **Lojas parceiras** (manual 7.1): sem lista, o agente sugere "uma loja especializada" sem citar nomes.
+- **Two phone numbers in the manual** (3341-4444 on the company info page; 3321-4500 on WhatsApp): the prompt instructs
+  presenting both with context and offering confirmation, instead of picking one.
+- **Email with an accent** in section 1.2 of the PDF (`empóriodamusica`): I used the unaccented spelling from the cover
+  page.
+- **Installments "up to 3x with no minimum (except below R$ 50)":** interpreted as a R$ 50 floor per installment.
+- **Delivery date** doesn't exist in the data; I use the `estimated_delivery` of delivered orders and tell the customer
+  the team will confirm eligibility.
+- **The manual says "300+ instruments"**, the CSV has 65: the agent only talks about what the tools return.
+- **Shipping:** the manual says "above R$ 500" for free shipping; I treat exactly R$ 500.00 as qualifying.
+- **Partner stores** (manual 7.1): no list provided, so the agent suggests "a specialized store" without naming any.
 
-## Limitações conhecidas e próximos passos
+## Known limitations and next steps
 
-- Sem avaliação automática de qualidade das respostas (próximo passo: conjunto de cenários com checagens de tool calls e de fatos).
-- Sem fechamento de venda/reserva, sem integração real com WhatsApp, `encaminhar_atendente` grava em arquivo
-  (`var/encaminhamentos.jsonl`); com mais tempo, integraria com um CRM/fila real de atendimento.
-- Busca de políticas com sinônimos manuais; busca de produtos lexical (sem tolerância a erros de digitação além de plural);
-  com mais tempo, trocaria por busca semântica (embeddings) nos dois casos, já que a lista manual de sinônimos não escala.
+- No automated quality evaluation of responses (next step: a set of scenarios with tool-call and fact checks).
+- No order/reservation checkout, no real WhatsApp integration, `encaminhar_atendente` just logs to a file
+  (`var/encaminhamentos.jsonl`); with more time, I would integrate with a real CRM/support queue.
+- Policy search uses manual synonyms; product search is lexical (no typo tolerance beyond plurals); with more time, I
+  would replace both with semantic search (embeddings), since the manual synonym list doesn't scale.
 
-## Uso de assistentes de código
+## Use of coding assistants
 
-O projeto foi desenvolvido com o **Claude Code (Anthropic)** em modo agente, com revisão ativa em cada etapa:
+This project was built with **Claude Code (Anthropic)** in agent mode, with active review at every step:
 
-- Foi usado o modo de planejamento (*Plan Mode*) do Claude Code para alinhar a abordagem antes das implementações maiores.
-- Foi pedida a consulta à documentação oficial (Python 3.10, API/MCP do OpenRouter, Vite e React) nas decisões de configuração que
-  não eram óbvias.
-- Foram usadas referências visuais *ground truth* (a identidade real da Artefact) para guiar o design da interface web.
-- A arquitetura foi focada em uma solução funcional, simples e barata: os dados são pequenos e estruturados (CSVs com ~65 produtos,
-  poucas dezenas de pedidos, manual de ~8 páginas) e o domínio é consulta objetiva (preço, estoque, status, política), não um
-  problema de raciocínio complexo — por isso function calling sobre dados estruturados e busca lexical bastam, sem exigir
-  infraestrutura de RAG com embeddings/vetor DB nem um modelo caro; o assistente leu o enunciado e os dados, escreveu o código e os testes, e
-  executou a validação end-to-end contra o modelo real (DeepSeek via OpenRouter), incluindo a geração dos `examples/`.
-- Antes de cada entrega (PR), foi usada a skill `simplify` do Claude Code para revisar o próprio diff (reuso, qualidade e
-  eficiência) e corrigir o que fosse encontrado, inclusive retroativamente nas primeiras entregas.
-- As operações no GitHub (criação de branches, commits, abertura e merge das PRs) foram feitas pelo próprio Claude Code
-  usando a `gh` CLI, simulando um fluxo de entregas incrementais em vez de um único commit.
+- Claude Code's planning mode (*Plan Mode*) was used to align on the approach before larger implementations.
+- Official documentation (Python 3.10, OpenRouter's API/MCP, Vite and React) was consulted for non-obvious configuration
+  decisions.
+- *Ground truth* visual references (Artefact's actual visual identity) were used to guide the web interface design.
+- The architecture was kept focused on a functional, simple and cheap solution: the data is small and structured
+  (CSVs with ~65 products, a few dozen orders, an ~8-page manual) and the domain is objective lookup (price, stock,
+  status, policy), not a complex reasoning problem — so function calling over structured data plus lexical search is
+  enough, without needing RAG infrastructure with embeddings/a vector DB or an expensive model; the assistant read the
+  brief and the data, wrote the code and the tests, and ran end-to-end validation against the real model (DeepSeek via
+  OpenRouter), including generating the `examples/`.
+- Before every delivery (PR), Claude Code's `simplify` skill was used to review its own diff (reuse, quality and
+  efficiency) and fix anything found, including retroactively on the earliest deliveries.
+- GitHub operations (creating branches, commits, opening and merging PRs) were done by Claude Code itself using the
+  `gh` CLI, simulating an incremental-delivery workflow instead of a single commit.
