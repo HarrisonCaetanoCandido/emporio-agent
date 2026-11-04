@@ -142,8 +142,10 @@ A mesma lista de ferramentas (`src/emporio/tools.py`) é usada de duas formas, s
 ## Limitações conhecidas e próximos passos
 
 - Sem avaliação automática de qualidade das respostas (próximo passo: conjunto de cenários com checagens de tool calls e de fatos).
-- Sem fechamento de venda/reserva, sem integração real com WhatsApp, `encaminhar_atendente` grava em arquivo (`var/encaminhamentos.jsonl`).
-- Busca de políticas com sinônimos manuais; busca de produtos lexical (sem tolerância a erros de digitação além de plural).
+- Sem fechamento de venda/reserva, sem integração real com WhatsApp, `encaminhar_atendente` grava em arquivo
+  (`var/encaminhamentos.jsonl`); com mais tempo, integraria com um CRM/fila real de atendimento.
+- Busca de políticas com sinônimos manuais; busca de produtos lexical (sem tolerância a erros de digitação além de plural);
+  com mais tempo, trocaria por busca semântica (embeddings) nos dois casos, já que a lista manual de sinônimos não escala.
 
 ## Uso de assistentes de código
 
